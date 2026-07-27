@@ -9,19 +9,28 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   
-  <!-- Babel Compiler for JSX -->
+  <!-- Babel Compiler for in-browser JSX parsing -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <!-- Lucide Icons & Tailwind CSS -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+<!-- Lucide Icons CDN -->
+<script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-50 text-slate-800">
   <div id="root"></div>
 
   <script type="text/babel">
-import React, { useState, useMemo } from "react";
-import { Ship, FileCheck2, Landmark, TrendingUp, Info, ChevronRight, Anchor, MapPin, CheckCircle2, Layers } from "lucide-react";
+const Ship = () => <span>🚢</span>;
+const FileCheck2 = () => <span>📄</span>;
+const Landmark = () => <span>🏛️</span>;
+const TrendingUp = () => <span>📈</span>;
+const Info = () => <span>ℹ️</span>;
+const ChevronRight = () => <span>→</span>;
+const Anchor = () => <span>⚓</span>;
+const MapPin = () => <span>📍</span>;
+const CheckCircle2 = () => <span>✅</span>;
+const Layers = () => <span>🥞</span>;
+    const { useState, useMemo } = React;
 
 const peso = (n) =>
   "₱" + Math.round(n || 0).toLocaleString("en-PH", { maximumFractionDigits: 0 });
@@ -476,13 +485,13 @@ export default function TiezaCalculator() {
             </div>
             <a href="https://www.firms.firb.gov.ph/login" target="_blank" rel="noreferrer"
               className="inline-flex items-center gap-1.5 bg-[#0B1D3A] text-white text-sm font-semibold px-4 py-2.5 rounded-lg whitespace-nowrap hover:bg-[#123A66] transition-colors">
-              Start on FIRMS <ChevronRight size={16} />
+              Start on FIRMS &rarr;
             </a>
           </div>
 
           {/* Disclaimer */}
           <div className="flex items-start gap-2 text-[11px] text-[#5b7290] px-1">
-            <Info size={14} className="mt-0.5 shrink-0" />
+            <span>ℹ</span>
             <p>
               This is a planning estimate only, not a determination of eligibility or tax advice. The location/tier
               matrix and IPA-FIRB threshold reflect the general CREATE MORE IRR and SIPP framework; actual incentive
@@ -496,11 +505,11 @@ export default function TiezaCalculator() {
   );
 }
 
-    // At the bottom, render it to the page:
+ 
+
+    // Render to DOM:
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<TiezaCalculator />);
-  const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<TiezaCalculator />);
   </script>
 </body>
 </html>
