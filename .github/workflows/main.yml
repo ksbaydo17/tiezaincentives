@@ -1,0 +1,475 @@
+import React, { useState, useMemo } from "react";
+import { Ship, FileCheck2, Landmark, TrendingUp, Info, ChevronRight, Anchor, MapPin, CheckCircle2, Layers } from "lucide-react";
+
+const peso = (n) =>
+  "₱" + Math.round(n || 0).toLocaleString("en-PH", { maximumFractionDigits: 0 });
+
+const GOLD = "#F2A93B";
+const NAVY = "#0B1D3A";
+
+function classify(cost) {
+  if (cost <= 3_000_000) return { tier: "Micro", filingFee: 1500, days: 10 };
+  if (cost <= 15_000_000) return { tier: "Small", filingFee: 3000, days: 10 };
+  if (cost <= 20_000_000) return { tier: "Medium", filingFee: 3000, days: 20 };
+  if (cost <= 50_000_000) return { tier: "Medium", filingFee: 4500, days: 20 };
+  if (cost <= 100_000_000) return { tier: "Medium", filingFee: 6000, days: 20 };
+  return { tier: "Large", filingFee: 6000, days: 20 };
+}
+
+function regFee(cost) {
+  const raw = cost * 0.001;
+  return Math.min(15000, Math.max(3000, raw));
+}
+
+// Location x SIPP industry-tier ITH matrix, per the CREATE MORE IRR / SIPP location-tiering framework.
+const ITH_TABLE = {
+  ncr: { 1: 4, 2: 5, 3: 6 },
+  metro: { 1: 5, 2: 6, 3: 7 },
+  other: { 1: 6, 2: 7, 3: 7 },
+};
+
+const LOCATIONS = [
+  { value: "ncr", label: "NCR", sub: "National Capital Region — Metro Manila's 16 cities and Pateros" },
+  {
+    value: "metro",
+    label: "Metro-adjacent",
+    sub: "Areas contiguous & adjacent to NCR per the CREATE MORE Act — Bulacan, Cavite, Laguna, and Rizal",
+  },
+  { value: "other", label: "All other areas", sub: "All other provinces and regions outside NCR and its adjacent areas" },
+];
+
+const TIERS = [
+  { value: 1, label: "Tier I", sub: "Basic needs, jobs" },
+  { value: 2, label: "Tier II", sub: "Supply-chain, import substitution" },
+  { value: 3, label: "Tier III", sub: "Innovation, high value-add" },
+];
+
+// Approving-body threshold: larger, high-value projects are elevated to the FIRB
+// and receive the longer EDR tail; smaller ones clear at IPA (TIEZA) level.
+const FIRB_THRESHOLD = 15_000_000_000;
+
+const numField = (label, value, setValue) => (
+  <label className="block mb-3">
+    <span className="text-[11px] uppercase tracking-wide text-[#5b7290] font-semibold">{label}</span>
+    <div className="mt-1 flex items-center rounded-lg border border-[#c7d6e5] bg-white focus-within:ring-2 focus-within:ring-[#3FA9E0] overflow-hidden">
+      <span className="pl-3 pr-1 text-[#8096ad] font-mono text-sm">₱</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={value ? Number(value).toLocaleString("en-US") : ""}
+        onChange={(e) => {
+          const digits = e.target.value.replace(/[^0-9]/g, "");
+          setValue(digits === "" ? 0 : Number(digits));
+        }}
+        placeholder="0"
+        className="w-full py-2 pr-3 font-mono text-sm text-[#0B1D3A] outline-none"
+      />
+    </div>
+  </label>
+);
+
+// Visible choice tile — always shown, gold highlight + check when selected. Never hidden.
+const ChoiceTile = ({ selected, onClick, title, sub }) => (
+  <button
+    onClick={onClick}
+    className="text-left rounded-xl border-2 px-3 py-2.5 transition-all w-full"
+    style={{
+      borderColor: selected ? GOLD : "#c7d6e5",
+      background: selected ? "#FEF6E7" : "#ffffff",
+    }}
+  >
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-sm font-bold" style={{ color: NAVY }}>{title}</span>
+      {selected && <CheckCircle2 size={16} style={{ color: GOLD }} className="shrink-0" />}
+    </div>
+    {sub && <div className="text-xs text-[#5b7290] mt-1">{sub}</div>}
+  </button>
+);
+
+const Section = ({ n, title, children }) => (
+  <div className="mb-6">
+    <div className="flex items-center gap-2 mb-3">
+      <span className="flex items-center justify-center w-6 h-6 rounded-full text-[#0B1D3A] text-xs font-bold font-mono" style={{ background: GOLD }}>
+        {n}
+      </span>
+      <h3 className="text-[#0B1D3A] font-bold text-[15px]" style={{ fontFamily: "Sora, sans-serif" }}>
+        {title}
+      </h3>
+    </div>
+    {children}
+  </div>
+);
+
+export default function TiezaCalculator() {
+  const [cost, setCost] = useState(50_000_000);
+  const [projectType, setProjectType] = useState("new"); // new | expansion
+  const [market, setMarket] = useState("dme"); // dme | ree
+  const [location, setLocation] = useState("other");
+  const [tier, setTier] = useState(1);
+  const [approvingBody, setApprovingBody] = useState(null); // null = auto from cost; else "ipa" | "firb"
+  const [ithOption, setIthOption] = useState("ith-first"); // ith-first | skip-ith
+  const [expansionTerm, setExpansionTerm] = useState(null); // null = auto; else 8 | 13
+
+  const [taxableIncome, setTaxableIncome] = useState(20_000_000);
+  const [buildingsCapex, setBuildingsCapex] = useState(0);
+  const [machineryCapex, setMachineryCapex] = useState(0);
+  const [laborExpense, setLaborExpense] = useState(0);
+  const [trainingExpense, setTrainingExpense] = useState(0);
+  const [powerExpense, setPowerExpense] = useState(0);
+  const [domesticInputs, setDomesticInputs] = useState(0);
+  const [rndExpense, setRndExpense] = useState(0);
+  const [exhibitionExpense, setExhibitionExpense] = useState(0);
+  const [customsVat, setCustomsVat] = useState(0);
+
+  const cls = classify(cost);
+  const fee = regFee(cost);
+  const isREE = market === "ree";
+  const isExpansion = projectType === "expansion";
+
+  const autoHighValue = cost > FIRB_THRESHOLD;
+  const isHighValue = approvingBody ? approvingBody === "firb" : autoHighValue;
+
+  const ithYears = ITH_TABLE[location][tier];
+  const edrAfterIth = isHighValue ? 20 : 10;
+  const newProjectTotalYears = ithYears + edrAfterIth;
+  const expTerm = expansionTerm ?? (isHighValue ? 13 : 8);
+
+  const locationLabel = LOCATIONS.find((l) => l.value === location).label;
+  const tierLabel = tier === 1 ? "Tier I" : tier === 2 ? "Tier II" : "Tier III";
+
+  // Income tax-based timeline — strictly scoped to the chosen path (New vs. Expansion)
+  const timeline = useMemo(() => {
+    if (isExpansion) {
+      return [{ label: "EDR", years: expTerm, kind: "edr" }];
+    }
+    if (ithOption === "ith-first") {
+      return [
+        { label: "ITH (0% income tax)", years: ithYears, kind: "ith" },
+        { label: "EDR", years: edrAfterIth, kind: "edr" },
+      ];
+    }
+    return [{ label: "EDR", years: newProjectTotalYears, kind: "edr" }];
+  }, [isExpansion, ithOption, ithYears, edrAfterIth, newProjectTotalYears, expTerm]);
+
+  const totalYears = timeline.reduce((a, s) => a + s.years, 0);
+
+  const edrDeductions = useMemo(() => {
+    const rows = [
+      { label: "Depreciation — buildings", rate: "+10%", amount: buildingsCapex * 0.1 },
+      { label: "Depreciation — machinery & equipment", rate: "+20%", amount: machineryCapex * 0.2 },
+      { label: "Labor expense", rate: "+50%", amount: laborExpense * 0.5 },
+      { label: "Training expense", rate: "+100%", amount: trainingExpense * 1.0 },
+      { label: "Power expense", rate: "+100%", amount: powerExpense * 1.0 },
+      { label: "Domestic inputs expense", rate: "+50%", amount: domesticInputs * 0.5 },
+      { label: "R&D costs", rate: "+100%", amount: rndExpense * 1.0 },
+      { label: "Exhibitions / trade missions / fairs", rate: "+50%", amount: exhibitionExpense * 0.5 },
+    ];
+    return rows.filter((r) => r.amount > 0);
+  }, [buildingsCapex, machineryCapex, laborExpense, trainingExpense, powerExpense, domesticInputs, rndExpense, exhibitionExpense]);
+
+  const totalAdditionalDeductions = edrDeductions.reduce((a, r) => a + r.amount, 0);
+
+  const regularTax = taxableIncome * 0.25;
+  const edrTaxableBase = Math.max(0, taxableIncome - totalAdditionalDeductions);
+  const edrTax = edrTaxableBase * 0.2;
+  const annualSavingsDuringEDR = Math.max(0, regularTax - edrTax);
+
+  const ithYearsInTimeline = timeline.find((s) => s.kind === "ith")?.years || 0;
+  const edrYearsInTimeline = timeline.filter((s) => s.kind === "edr").reduce((a, s) => a + s.years, 0);
+
+  const cumulativeSavings = ithYearsInTimeline * regularTax + edrYearsInTimeline * annualSavingsDuringEDR;
+
+  return (
+    <div className="min-h-screen w-full" style={{ background: "#F5F7FA", fontFamily: "Inter, sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
+      `}</style>
+
+      {/* Header */}
+      <div className="relative overflow-hidden" style={{ background: "linear-gradient(135deg,#123A66 0%,#1C5D99 55%,#3FA9E0 100%)" }}>
+        <div className="max-w-6xl mx-auto px-5 pt-8 pb-10">
+          <div className="flex items-center gap-2 text-[#F2A93B] text-xs font-bold tracking-widest uppercase mb-3">
+            <Landmark size={14} /> TIEZA · Invest in Philippine Tourism
+          </div>
+          <h1 className="text-white font-extrabold text-2xl sm:text-3xl leading-tight" style={{ fontFamily: "Sora, sans-serif" }}>
+            CREATE MORE Incentives Estimator
+          </h1>
+          <p className="text-[#c7d9ec] text-sm mt-2 max-w-xl">
+            See the incentive timeline and estimated tax savings for your tourism project once you register with TIEZA under the CREATE MORE Act.
+          </p>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 sm:px-5 -mt-6 pb-16 grid lg:grid-cols-[400px_1fr] gap-5">
+        {/* FORM PANEL */}
+        <div className="bg-white rounded-2xl shadow-lg border border-[#e3e9f0] p-5 h-fit">
+          <Section n={1} title="Project cost">
+            {numField("Total project cost", cost, setCost)}
+            <div className="text-xs text-[#5b7290] flex justify-between font-mono">
+              <span>Classification: <b className="text-[#0B1D3A]">{cls.tier}</b></span>
+              <span>{cls.days} working days</span>
+            </div>
+          </Section>
+
+          <Section n={2} title="Are you a new enterprise or a qualified expansion?">
+            <div className="grid grid-cols-2 gap-2">
+              <ChoiceTile selected={projectType === "new"} onClick={() => setProjectType("new")}
+                title="New Project" sub="First-time registration" />
+              <ChoiceTile selected={projectType === "expansion"} onClick={() => setProjectType("expansion")}
+                title="Qualified Expansion" sub="Expansion, modernization, or rehabilitation" />
+            </div>
+          </Section>
+
+          <Section n={3} title="Where is it located?">
+            <div className="flex items-center gap-1.5 text-xs text-[#5b7290] mb-2">
+              <MapPin size={12} /> Location determines your period of availment under the CREATE MORE IRR / SIPP.
+            </div>
+            <div className="grid gap-2">
+              {LOCATIONS.map((l) => (
+                <ChoiceTile key={l.value} selected={location === l.value} onClick={() => setLocation(l.value)}
+                  title={l.label} sub={l.sub} />
+              ))}
+            </div>
+          </Section>
+
+          <Section n={4} title="SIPP industry tier">
+            <div className="grid gap-2">
+              {TIERS.map((t) => (
+                <ChoiceTile key={t.value} selected={tier === t.value} onClick={() => setTier(t.value)}
+                  title={t.label} sub={t.sub} />
+              ))}
+            </div>
+            <p className="text-xs text-[#5b7290] mt-2">Confirm your activity's tier under the SIPP list of priority tourism projects with TIEZA.</p>
+          </Section>
+
+          <Section n={5} title="Enterprise market">
+            <div className="grid grid-cols-2 gap-2">
+              <ChoiceTile selected={market === "dme"} onClick={() => setMarket("dme")} title="Domestic Market" />
+              <ChoiceTile selected={market === "ree"} onClick={() => setMarket("ree")} title="Registered Export" />
+            </div>
+          </Section>
+
+          <Section n={6} title="Approving authority">
+            <div className="grid grid-cols-2 gap-2">
+              <ChoiceTile selected={isHighValue === false} onClick={() => setApprovingBody("ipa")}
+                title="IPA (TIEZA)" sub="Standard track" />
+              <ChoiceTile selected={isHighValue === true} onClick={() => setApprovingBody("firb")}
+                title="FIRB" sub="High-value track" />
+            </div>
+            <p className="text-xs text-[#5b7290] mt-2">
+              Auto-suggested from project cost (over {peso(FIRB_THRESHOLD)} routes to the FIRB for the longer track) — tap either to override.
+            </p>
+          </Section>
+
+          {!isExpansion ? (
+            <Section n={7} title="Choose your incentive option">
+              <p className="text-xs text-[#5b7290] mb-2">
+                Every new enterprise chooses between two income tax-based options. Both run the same total length — the difference is when the 0% window falls.
+              </p>
+              <div className="grid gap-2">
+                <ChoiceTile
+                  selected={ithOption === "ith-first"}
+                  onClick={() => setIthOption("ith-first")}
+                  title="Option 1 — ITH, then EDR"
+                  sub={`${ithYears}y ITH (0% tax) + ${edrAfterIth}y EDR = ${newProjectTotalYears}y total`}
+                />
+                <ChoiceTile
+                  selected={ithOption === "skip-ith"}
+                  onClick={() => setIthOption("skip-ith")}
+                  title="Option 2 — Skip ITH, EDR from day 1"
+                  sub={`${newProjectTotalYears}y of EDR immediately, no tax holiday`}
+                />
+              </div>
+            </Section>
+          ) : (
+            <Section n={7} title="Choose your expansion term">
+              <div className="grid gap-2">
+                <ChoiceTile selected={expTerm === 8} onClick={() => setExpansionTerm(8)}
+                  title="8 years" sub="EDR — standard track" />
+                <ChoiceTile selected={expTerm === 13} onClick={() => setExpansionTerm(13)}
+                  title="13 years" sub="EDR — high-value track" />
+              </div>
+            </Section>
+          )}
+
+          <Section n={8} title="Estimate your tax savings (optional)">
+            {numField("Annual taxable income (pre-incentive)", taxableIncome, setTaxableIncome)}
+            <div className="grid grid-cols-2 gap-x-3">
+              {numField("Buildings capex", buildingsCapex, setBuildingsCapex)}
+              {numField("Machinery / equipment capex", machineryCapex, setMachineryCapex)}
+              {numField("Annual labor expense", laborExpense, setLaborExpense)}
+              {numField("Annual training expense", trainingExpense, setTrainingExpense)}
+              {numField("Annual power expense", powerExpense, setPowerExpense)}
+              {numField("Annual domestic inputs", domesticInputs, setDomesticInputs)}
+              {numField("Annual R&D expense", rndExpense, setRndExpense)}
+              {numField("Trade fairs / exhibitions", exhibitionExpense, setExhibitionExpense)}
+            </div>
+          </Section>
+        </div>
+
+        {/* RESULTS PANEL */}
+        <div className="space-y-5">
+          {/* Status badge */}
+          <div className="rounded-2xl border-2 p-4 flex items-center gap-3" style={{ borderColor: GOLD, background: "#FEF6E7" }}>
+            <Layers size={20} style={{ color: NAVY }} className="shrink-0" />
+            <div>
+              <div className="font-extrabold text-[#0B1D3A] text-[15px]" style={{ fontFamily: "Sora, sans-serif" }}>
+                {isExpansion ? "Qualified Expansion Project" : "New Project"} · {isREE ? "Registered Export Enterprise" : "Domestic Market Enterprise"}
+              </div>
+              <div className="text-xs text-[#5b7290] mt-0.5 font-mono">
+                {locationLabel} · {tierLabel} · {isHighValue ? "FIRB" : "IPA"} track
+              </div>
+            </div>
+          </div>
+
+          {/* Fees card */}
+          <div className="bg-white rounded-2xl shadow-lg border border-[#e3e9f0] p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <FileCheck2 size={18} className="text-[#1C5D99]" />
+              <h3 className="font-bold text-[#0B1D3A]" style={{ fontFamily: "Sora, sans-serif" }}>Registration fees</h3>
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="bg-[#F5F7FA] rounded-xl py-3">
+                <div className="text-[10px] uppercase text-[#5b7290] font-semibold">Classification</div>
+                <div className="font-mono font-bold text-[#0B1D3A] mt-1">{cls.tier}</div>
+              </div>
+              <div className="bg-[#F5F7FA] rounded-xl py-3">
+                <div className="text-[10px] uppercase text-[#5b7290] font-semibold">Filing fee</div>
+                <div className="font-mono font-bold text-[#0B1D3A] mt-1">{peso(cls.filingFee)}</div>
+              </div>
+              <div className="bg-[#F5F7FA] rounded-xl py-3">
+                <div className="text-[10px] uppercase text-[#5b7290] font-semibold">Registration fee</div>
+                <div className="font-mono font-bold text-[#0B1D3A] mt-1">{peso(fee)}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Income tax-based timeline */}
+          <div className="bg-white rounded-2xl shadow-lg border border-[#e3e9f0] p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <TrendingUp size={18} className="text-[#1C5D99]" />
+              <h3 className="font-bold text-[#0B1D3A]" style={{ fontFamily: "Sora, sans-serif" }}>Income tax-based incentives</h3>
+            </div>
+            <p className="text-xs text-[#5b7290] mb-4">
+              {totalYears} years total, starting from actual start of commercial operations
+            </p>
+            <div className="flex w-full h-10 rounded-lg overflow-hidden border border-[#dbe4ee]">
+              {timeline.map((seg, i) => (
+                <div
+                  key={i}
+                  style={{
+                    width: `${(seg.years / totalYears) * 100}%`,
+                    background: seg.kind === "ith" ? GOLD : "#1C5D99",
+                  }}
+                  className="flex items-center justify-center text-[11px] font-mono font-bold text-white"
+                  title={`${seg.label}: ${seg.years}y`}
+                >
+                  {seg.years}y
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-4 mt-3 text-xs text-[#33465c] font-medium">
+              {timeline.map((seg, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: seg.kind === "ith" ? GOLD : "#1C5D99" }} />
+                  {seg.kind === "edr" ? "EDR (20% CIT)" : seg.label}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Non-income tax-based incentives — kept separate, not part of the income-tax timeline */}
+          <div className="bg-white rounded-2xl shadow-lg border border-[#e3e9f0] p-5">
+            <h3 className="font-bold text-[#0B1D3A] mb-3" style={{ fontFamily: "Sora, sans-serif" }}>Non-income tax-based incentives</h3>
+            <div className="grid sm:grid-cols-2 gap-2 text-xs text-[#33465c]">
+              <div className="flex items-start gap-2 bg-[#F5F7FA] rounded-lg p-2.5">
+                <Ship size={14} className="mt-0.5 text-[#1C5D99] shrink-0" />
+                <span><b>Customs duty exemption</b> on capital equipment, raw materials, spare parts & accessories, including goods for administrative use</span>
+              </div>
+              {isREE ? (
+                <div className="flex items-start gap-2 bg-[#F5F7FA] rounded-lg p-2.5">
+                  <Anchor size={14} className="mt-0.5 text-[#1C5D99] shrink-0" />
+                  <span><b>VAT exemption</b> on importation & <b>VAT zero-rating</b> on local purchases directly attributable to the registered project</span>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 bg-[#F5F7FA] rounded-lg p-2.5 opacity-60">
+                  <Anchor size={14} className="mt-0.5 text-[#5b7290] shrink-0" />
+                  <span>VAT exemption & zero-rating apply to Registered Export Enterprises only</span>
+                </div>
+              )}
+            </div>
+            <div className="mt-3">
+              {numField("One-time customs duty & VAT on imported capital equipment (optional)", customsVat, setCustomsVat)}
+            </div>
+          </div>
+
+          {/* Savings hero */}
+          <div className="rounded-2xl shadow-lg p-5 text-white" style={{ background: "linear-gradient(135deg,#0B1D3A,#1C5D99)" }}>
+            <div className="text-xs uppercase tracking-wide text-[#c7d9ec] font-semibold mb-1">
+              Estimated value over the incentive period
+            </div>
+            <div className="text-3xl font-extrabold font-mono">{peso(cumulativeSavings + customsVat)}</div>
+            <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
+              <div className="bg-white/10 rounded-lg p-2.5">
+                <div className="text-[#c7d9ec]">During ITH ({ithYearsInTimeline}y)</div>
+                <div className="font-mono font-bold text-sm mt-0.5">{peso(regularTax)}/yr avoided</div>
+              </div>
+              <div className="bg-white/10 rounded-lg p-2.5">
+                <div className="text-[#c7d9ec]">During EDR — 20% CIT ({edrYearsInTimeline}y)</div>
+                <div className="font-mono font-bold text-sm mt-0.5">{peso(annualSavingsDuringEDR)}/yr saved</div>
+              </div>
+            </div>
+            {customsVat > 0 && (
+              <div className="text-[11px] text-[#c7d9ec] mt-3">Includes {peso(customsVat)} one-time customs/VAT savings, on top of income tax savings.</div>
+            )}
+          </div>
+
+          {/* EDR breakdown */}
+          {edrDeductions.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-lg border border-[#e3e9f0] p-5">
+              <h3 className="font-bold text-[#0B1D3A] mb-3" style={{ fontFamily: "Sora, sans-serif" }}>
+                Enhanced Deductions Regime — annual breakdown
+              </h3>
+              <p className="text-xs text-[#5b7290] -mt-2 mb-3">Taxable income under EDR is taxed at a flat 20% CIT, after these additional deductions.</p>
+              <div className="divide-y divide-[#eef2f7]">
+                {edrDeductions.map((r, i) => (
+                  <div key={i} className="flex justify-between py-2 text-sm">
+                    <span className="text-[#33465c]">{r.label} <span className="text-[#8096ad] font-mono text-xs">{r.rate}</span></span>
+                    <span className="font-mono font-semibold text-[#0B1D3A]">{peso(r.amount)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between py-2 text-sm font-bold">
+                  <span className="text-[#0B1D3A]">Total additional deductions</span>
+                  <span className="font-mono text-[#0B1D3A]">{peso(totalAdditionalDeductions)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* CTA */}
+          <div className="bg-white rounded-2xl shadow-lg border border-[#e3e9f0] p-5 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+            <div>
+              <div className="font-bold text-[#0B1D3A]" style={{ fontFamily: "Sora, sans-serif" }}>Ready to register?</div>
+              <div className="text-xs text-[#5b7290] mt-1">Apply through FIRMS and choose TIEZA as your IPA.</div>
+            </div>
+            <a href="https://www.firms.firb.gov.ph/login" target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-1.5 bg-[#0B1D3A] text-white text-sm font-semibold px-4 py-2.5 rounded-lg whitespace-nowrap hover:bg-[#123A66] transition-colors">
+              Start on FIRMS <ChevronRight size={16} />
+            </a>
+          </div>
+
+          {/* Disclaimer */}
+          <div className="flex items-start gap-2 text-[11px] text-[#5b7290] px-1">
+            <Info size={14} className="mt-0.5 shrink-0" />
+            <p>
+              This is a planning estimate only, not a determination of eligibility or tax advice. The location/tier
+              matrix and IPA-FIRB threshold reflect the general CREATE MORE IRR and SIPP framework; actual incentive
+              years, tier assignment, and approving body are determined by TIEZA/FIRB based on your specific
+              registered activity. Confirm final figures with TIEZA before registering.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
