@@ -8,11 +8,10 @@
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  
+
   <!-- Babel Compiler for in-browser JSX parsing -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<!-- Lucide Icons CDN -->
-<script src="https://unpkg.com/lucide@latest"></script>
+
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -20,16 +19,16 @@
   <div id="root"></div>
 
   <script type="text/babel">
-const Ship = () => <span>🚢</span>;
-const FileCheck2 = () => <span>📄</span>;
-const Landmark = () => <span>🏛️</span>;
-const TrendingUp = () => <span>📈</span>;
-const Info = () => <span>ℹ️</span>;
-const ChevronRight = () => <span>→</span>;
-const Anchor = () => <span>⚓</span>;
-const MapPin = () => <span>📍</span>;
-const CheckCircle2 = () => <span>✅</span>;
-const Layers = () => <span>🥞</span>;
+const Ship = ({ size = 16, className = "" }) => <span className={className} style={{ fontSize: size }}>🚢</span>;
+const FileCheck2 = ({ size = 16, className = "" }) => <span className={className} style={{ fontSize: size }}>📄</span>;
+const Landmark = ({ size = 16, className = "" }) => <span className={className} style={{ fontSize: size }}>🏛️</span>;
+const TrendingUp = ({ size = 16, className = "" }) => <span className={className} style={{ fontSize: size }}>📈</span>;
+const Info = ({ size = 16, className = "" }) => <span className={className} style={{ fontSize: size }}>ℹ️</span>;
+const ChevronRight = ({ size = 16, className = "" }) => <span className={className} style={{ fontSize: size }}>→</span>;
+const Anchor = ({ size = 16, className = "" }) => <span className={className} style={{ fontSize: size }}>⚓</span>;
+const MapPin = ({ size = 16, className = "" }) => <span className={className} style={{ fontSize: size }}>📍</span>;
+const CheckCircle2 = ({ size = 16, style = {}, className = "" }) => <span className={className} style={{ fontSize: size, ...style }}>✅</span>;
+const Layers = ({ size = 16, style = {}, className = "" }) => <span className={className} style={{ fontSize: size, ...style }}>🥞</span>;
     const { useState, useMemo } = React;
 
 const peso = (n) =>
@@ -131,7 +130,7 @@ const Section = ({ n, title, children }) => (
   </div>
 );
 
-export default function TiezaCalculator() {
+function TiezaCalculator() {
   const [cost, setCost] = useState(50_000_000);
   const [projectType, setProjectType] = useState("new"); // new | expansion
   const [market, setMarket] = useState("dme"); // dme | ree
@@ -485,13 +484,13 @@ export default function TiezaCalculator() {
             </div>
             <a href="https://www.firms.firb.gov.ph/login" target="_blank" rel="noreferrer"
               className="inline-flex items-center gap-1.5 bg-[#0B1D3A] text-white text-sm font-semibold px-4 py-2.5 rounded-lg whitespace-nowrap hover:bg-[#123A66] transition-colors">
-              Start on FIRMS &rarr;
+              Start on FIRMS <ChevronRight size={16} />
             </a>
           </div>
 
           {/* Disclaimer */}
           <div className="flex items-start gap-2 text-[11px] text-[#5b7290] px-1">
-            <span>ℹ</span>
+            <Info size={14} className="mt-0.5 shrink-0" />
             <p>
               This is a planning estimate only, not a determination of eligibility or tax advice. The location/tier
               matrix and IPA-FIRB threshold reflect the general CREATE MORE IRR and SIPP framework; actual incentive
@@ -505,11 +504,8 @@ export default function TiezaCalculator() {
   );
 }
 
- 
-
-    // Render to DOM:
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<TiezaCalculator />);
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<TiezaCalculator />);
   </script>
 </body>
 </html>
